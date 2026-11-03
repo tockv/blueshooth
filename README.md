@@ -11,16 +11,18 @@ macOS automatically connects to paired Bluetooth devices when they're in range, 
 
 ## Solution
 
-BlueShooth runs in your menu bar and lets you choose which paired devices should NOT auto-connect. Selected devices stay paired but won't connect automatically - you can still connect them manually through System Settings when you want to use them.
+BlueShooth runs in your menu bar and lets you choose which paired devices should NOT auto-connect. Selected devices stay paired but are disconnected when they try to connect on their own. You can still connect them whenever you want, from the BlueShooth menu or from System Settings.
 
 ## Features
 
 - 🎯 **Selective Auto-Connect Control**: Choose which devices can auto-connect
 - 🔌 **Quick Connect/Disconnect**: Connect or disconnect devices directly from the menu bar
 - 🟢 **Real-Time Status**: See which devices are currently connected
-- 🚫 **Automatic Blocking**: Instantly disconnects blocked devices if they try to auto-connect
+- 🚫 **Automatic Blocking**: Disconnects blocked devices when they try to auto-connect, while letting your manual connections through
+- 🙈 **Hide Devices**: Remove clutter from the list, such as hidden system pairings
+- ⚙️ **Bluetooth Settings Shortcut**: Open the native Bluetooth settings, so BlueShooth can replace the system Bluetooth menu bar item
+- 🚀 **Launch at Login**: Start automatically when you log in
 - 🔔 **Notifications**: Get notified about connection events
-- 📱 **Menu Bar Interface**: Quick access to all paired devices
 - 💾 **Persistent Settings**: Your preferences are saved between sessions
 - 🔒 **Privacy-Focused**: All settings stored locally, no data collection
 
@@ -31,72 +33,83 @@ BlueShooth runs in your menu bar and lets you choose which paired devices should
 
 ## Installation
 
-### Option 1: Build from Source
-
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/blueshooth.git
+   git clone https://github.com/tockv/blueshooth.git
    cd blueshooth
    ```
 
-2. Open the project in Xcode:
+2. Build a Release copy and install it to `/Applications`:
    ```bash
-   open BlueShooth.xcodeproj
+   xcodebuild -scheme BlueShooth -configuration Release -derivedDataPath build build
+   ditto build/Build/Products/Release/BlueShooth.app /Applications/BlueShooth.app
+   open /Applications/BlueShooth.app
    ```
+   Without `-derivedDataPath build`, Xcode puts the app under `~/Library/Developer/Xcode/DerivedData/` instead.
 
-3. Build and run (⌘R) or archive for distribution (Product > Archive)
+3. Click the menu bar icon and choose **Launch at Login** to start BlueShooth automatically.
 
-### Option 2: Download Release
+4. *(Optional)* Hide the system Bluetooth menu bar item in System Settings → Menu Bar (or Control Center on older macOS) → Bluetooth → **Don't Show in Menu Bar**. Use **Bluetooth Settings…** in BlueShooth to reach the native settings.
 
-Download the latest release from the [Releases](https://github.com/yourusername/blueshooth/releases) page.
+To update, quit BlueShooth and repeat step 2.
+
+### Code signing
+
+With no development team set, Xcode signs the app ad-hoc ("Sign to Run Locally"). That's fine for running on your own Mac, but each rebuild looks like a new app to macOS, so after an update you may be asked for Bluetooth permission again and may need to re-enable Launch at Login. Setting a `DEVELOPMENT_TEAM` in the project gives a stable identity if this becomes annoying.
 
 ## Usage
 
-1. **Launch BlueShooth**: The app appears in your menu bar with a Bluetooth antenna icon
+1. **View Devices**: Click the menu bar icon (a Bluetooth antenna) to see your paired devices. The indicator beside each device shows its status:
+   - Green dot = connected
+   - Outline circle = disconnected
 
-2. **View Devices**: Click the menu bar icon to see all paired Bluetooth devices
-   - 🟢 = Currently connected
-   - ⚪️ = Disconnected
+2. **Connect/Disconnect**: Open a device's submenu and choose **Connect** or **Disconnect**. Connecting can take several seconds, during which the menu is unresponsive.
 
-3. **Connect/Disconnect Devices**:
-   - Click on any device to open its submenu
-   - Choose "Connect" to connect a disconnected device
-   - Choose "Disconnect" to disconnect a connected device
-   - No need to open System Settings!
+3. **Toggle Auto-Connect**: In the device submenu, click the auto-connect option:
+   - ✅ Auto-connect: Enabled = normal macOS behavior
+   - 🚫 Auto-connect: Disabled = the device is disconnected when it tries to connect on its own
 
-4. **Toggle Auto-Connect**:
-   - In the device submenu, click the auto-connect option
-   - ✓ Auto-connect: Enabled = Normal macOS behavior
-   - 🚫 Auto-connect: Disabled = Device will be blocked from auto-connecting
+   Turning auto-connect off also disconnects the device if it's currently connected.
 
-5. **Refresh**: Click "Refresh Devices" to update the device list
+4. **Hide Devices**: Choose **Hide from List** in a device's submenu. Hidden devices appear under **Hidden Devices**, where you can show them again. Hiding only affects the list; a hidden device's auto-connect setting still applies.
+
+5. **Other options**:
+   - **Refresh Devices** (⌘R) re-reads the paired device list (this also happens each time the menu opens)
+   - **Bluetooth Settings…** (⌘,) opens System Settings → Bluetooth
+   - **Launch at Login** toggles starting at login; if macOS needs you to approve it, the item says so and opens Login Items settings
 
 ## How It Works
 
-BlueShooth provides direct control over Bluetooth connections without opening System Settings. The app:
-
-1. Lists all paired Bluetooth devices with real-time connection status
-2. Allows you to connect/disconnect devices programmatically via IOBluetooth
-3. Stores your auto-connect preferences locally using UserDefaults
-4. Monitors system Bluetooth notifications
-5. Disconnects blocked devices immediately when they try to auto-connect
-6. Shows notifications for connection events
+1. Lists paired devices via IOBluetooth, rebuilding the menu each time it opens
+2. Registers for IOBluetooth connect notifications
+3. When a device with auto-connect disabled connects, checks who started the connection:
+   - **Started by the device** (`isIncoming`) → treated as an auto-connect and disconnected
+   - **Started by the Mac** (the BlueShooth menu or System Settings) → treated as manual and left alone
+4. Stores auto-connect and hidden-device preferences locally using UserDefaults
+5. Registers as a login item via `SMAppService`
 
 ## Permissions
 
-BlueShooth requires Bluetooth access to:
-- List paired devices
-- Monitor connection events
-- Connect and disconnect devices programmatically
-
-The app will request Bluetooth permissions on first launch.
+BlueShooth requires Bluetooth access to list paired devices, monitor connection events, and connect/disconnect devices. It also asks for permission to show notifications. Both are requested on first launch.
 
 ## Limitations
 
-- Device must remain paired (unpaired devices can't be managed)
+- Blocking happens after the connection is made: a blocked device connects briefly before being disconnected
+- Connections started from the device itself (for example pressing a speaker's Bluetooth button) are treated as auto-connects and blocked
+- If macOS itself reconnects to a device (rather than the device reconnecting), the connection looks manual and isn't blocked
+- Devices must remain paired (unpaired devices can't be managed)
 - Some Bluetooth devices may not support programmatic connection/disconnection
-- Some devices may attempt to reconnect multiple times (the app will continue blocking them)
-- Connection success depends on device proximity and Bluetooth stack availability
+- `IOBluetoothDevice.pairedDevices()` can include pairings that System Settings hides; use **Hide from List** for these
+
+## Troubleshooting
+
+Connect and block events are logged under the `com.blueshooth.app` subsystem. Stream them while reproducing a problem:
+
+```bash
+/usr/bin/log stream --style compact --predicate 'subsystem == "com.blueshooth.app"'
+```
+
+Use the full `/usr/bin/log` path in zsh, where `log` is a shell built-in.
 
 ## Development
 
@@ -105,41 +118,23 @@ The app will request Bluetooth permissions on first launch.
 ```
 BlueShooth/
 ├── BlueShooth/
-│   ├── AppDelegate.swift           # Main app and menu bar interface
-│   ├── BluetoothManager.swift      # Bluetooth device management logic
+│   ├── AppDelegate.swift           # App entry point and menu bar interface
+│   ├── BluetoothManager.swift      # Bluetooth device management and blocking
 │   ├── Info.plist                  # App configuration
 │   └── BlueShooth.entitlements     # Required permissions
 ├── BlueShooth.xcodeproj/           # Xcode project
 └── README.md
 ```
 
-### Building
-
-```bash
-# Build from command line
-xcodebuild -project BlueShooth.xcodeproj -scheme BlueShooth -configuration Release build
-
-# The built app will be in:
-# build/Release/BlueShooth.app
-```
+The app has no storyboard or nib, so `AppDelegate` provides its own `main()` to set itself as the application delegate.
 
 ### Technologies Used
 
-- **Swift 5.0**: Modern, safe programming language
-- **IOBluetooth Framework**: macOS Bluetooth APIs
-- **Cocoa/AppKit**: macOS UI framework
-- **NSStatusBar**: Menu bar integration
-- **NotificationCenter**: System event monitoring
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- **Swift 5**
+- **IOBluetooth**: device listing, connection control, and connect notifications
+- **AppKit**: `NSStatusBar` menu bar integration
+- **ServiceManagement**: Launch at Login
+- **UserNotifications**: connection event notifications
 
 ## Known Issues
 
@@ -150,11 +145,13 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 ## Roadmap
 
 - [x] Quick connect/disconnect from menu bar
+- [x] Launch at login option
+- [x] Hide devices from the list
+- [ ] Connect without blocking the menu
 - [ ] Add device grouping/favorites
 - [ ] Customize notification sounds
 - [ ] Schedule-based auto-connect rules
 - [ ] Battery level indicators for devices
-- [ ] Launch at login option
 - [ ] Keyboard shortcuts
 - [ ] Connection history tracking
 
@@ -164,15 +161,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
+- Forked from the original BlueShooth project
 - Built with Apple's IOBluetooth framework
-- Inspired by the need for better Bluetooth control on macOS
 
 ## Support
 
-If you encounter any issues or have suggestions:
-- Open an issue on [GitHub Issues](https://github.com/yourusername/blueshooth/issues)
-- Check existing issues for solutions
-
----
-
-Made with ❤️ for macOS users who want more control over their Bluetooth devices
+If you encounter any issues or have suggestions, open an issue on [GitHub Issues](https://github.com/tockv/blueshooth/issues).
