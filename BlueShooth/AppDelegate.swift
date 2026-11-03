@@ -2,7 +2,7 @@ import Cocoa
 import IOBluetooth
 
 @main
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItem: NSStatusItem!
     var menu: NSMenu!
     var bluetoothManager: BluetoothManager!
@@ -17,29 +17,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.image = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right", accessibilityDescription: "BlueShooth")
 
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right", accessibilityDescription: "BlueShooth")
-            button.action = #selector(statusBarButtonClicked)
-        }
-
-        // Initialize Bluetooth manager
         bluetoothManager = BluetoothManager()
 
-        // Setup menu
-        setupMenu()
+        menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
     }
 
-    @objc func statusBarButtonClicked() {
+    // Rebuild on every open so connection status is always current.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        bluetoothManager.refreshDevices()
         setupMenu()
-        statusItem.menu = menu
-        statusItem.button?.performClick(nil)
     }
 
     func setupMenu() {
-        menu = NSMenu()
+        menu.removeAllItems()
 
         // Title
         let titleItem = NSMenuItem(title: "BlueShooth - Smart Bluetooth Manager", action: nil, keyEquivalent: "")
@@ -122,47 +117,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Refresh
-        menu.addItem(NSMenuItem(title: "Refresh Devices", action: #selector(refreshDevices), keyEquivalent: "r"))
+        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(refreshDevices), keyEquivalent: "r")
+        refreshItem.target = self
+        menu.addItem(refreshItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        // Quit
-        menu.addItem(NSMenuItem(title: "Quit BlueShooth", action: #selector(quitApp), keyEquivalent: "q"))
+        let quitItem = NSMenuItem(title: "Quit BlueShooth", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
     }
 
     @objc func connectDevice(_ sender: NSMenuItem) {
         guard let device = sender.representedObject as? BluetoothDevice else { return }
-
         _ = bluetoothManager.connectDevice(device)
-
-        // Refresh menu after a short delay to show updated connection status
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.setupMenu()
-        }
     }
 
     @objc func disconnectDevice(_ sender: NSMenuItem) {
         guard let device = sender.representedObject as? BluetoothDevice else { return }
-
         _ = bluetoothManager.disconnectDevice(device)
-
-        // Refresh menu after a short delay to show updated connection status
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.setupMenu()
-        }
     }
 
     @objc func toggleDeviceAutoConnect(_ sender: NSMenuItem) {
         guard let device = sender.representedObject as? BluetoothDevice else { return }
-
         bluetoothManager.toggleAutoConnect(for: device)
-        setupMenu()
     }
 
     @objc func refreshDevices() {
         bluetoothManager.refreshDevices()
-        setupMenu()
     }
 
     @objc func quitApp() {
