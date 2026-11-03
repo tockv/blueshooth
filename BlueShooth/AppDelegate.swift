@@ -1,5 +1,6 @@
 import Cocoa
 import IOBluetooth
+import ServiceManagement
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -121,6 +122,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshItem.target = self
         menu.addItem(refreshItem)
 
+        let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
+        loginItem.target = self
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            loginItem.state = .on
+        case .requiresApproval:
+            loginItem.state = .mixed
+            loginItem.title = "Launch at Login (needs approval)"
+        default:
+            loginItem.state = .off
+        }
+        menu.addItem(loginItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(title: "Quit BlueShooth", action: #selector(quitApp), keyEquivalent: "q")
@@ -145,6 +159,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func refreshDevices() {
         bluetoothManager.refreshDevices()
+    }
+
+    @objc func toggleLaunchAtLogin(_ sender: NSMenuItem) {
+        let service = SMAppService.mainApp
+        do {
+            switch service.status {
+            case .enabled:
+                try service.unregister()
+            case .requiresApproval:
+                SMAppService.openSystemSettingsLoginItems()
+            default:
+                try service.register()
+                if service.status == .requiresApproval {
+                    SMAppService.openSystemSettingsLoginItems()
+                }
+            }
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "Couldn't change Launch at Login"
+            NSApp.activate(ignoringOtherApps: true)  // menu bar apps aren't frontmost, so the alert would open behind other windows
+            alert.runModal()
+        }
     }
 
     @objc func quitApp() {
