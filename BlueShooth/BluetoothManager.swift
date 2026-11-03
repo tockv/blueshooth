@@ -25,6 +25,8 @@ class BluetoothManager: NSObject {
     private var pairedDevices: [BluetoothDevice] = []
     private var connectNotification: IOBluetoothUserNotification?
     private var pendingBlocks: Set<String> = []
+    private let hiddenDefaultsKey = "HiddenDevices"
+    private var hiddenDevices: Set<String> = []  // e.g. hidden system pairings that pairedDevices() still returns
 
     override init() {
         super.init()
@@ -51,7 +53,20 @@ class BluetoothManager: NSObject {
     }
 
     func getPairedDevices() -> [BluetoothDevice] {
-        return pairedDevices
+        return pairedDevices.filter { !hiddenDevices.contains($0.address) }
+    }
+
+    func getHiddenDevices() -> [BluetoothDevice] {
+        return pairedDevices.filter { hiddenDevices.contains($0.address) }
+    }
+
+    func setHidden(_ hidden: Bool, for device: BluetoothDevice) {
+        if hidden {
+            hiddenDevices.insert(device.address)
+        } else {
+            hiddenDevices.remove(device.address)
+        }
+        UserDefaults.standard.set(Array(hiddenDevices), forKey: hiddenDefaultsKey)
     }
 
     func refreshDevices() {
@@ -170,6 +185,9 @@ class BluetoothManager: NSObject {
     private func loadDisabledDevices() {
         if let saved = UserDefaults.standard.array(forKey: userDefaultsKey) as? [String] {
             disabledDevices = Set(saved)
+        }
+        if let hidden = UserDefaults.standard.array(forKey: hiddenDefaultsKey) as? [String] {
+            hiddenDevices = Set(hidden)
         }
     }
 

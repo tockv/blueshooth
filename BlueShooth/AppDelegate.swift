@@ -47,7 +47,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let pairedDevices = bluetoothManager.getPairedDevices()
 
         if pairedDevices.isEmpty {
-            let noDevicesItem = NSMenuItem(title: "No paired devices found", action: nil, keyEquivalent: "")
+            let emptyTitle = bluetoothManager.getHiddenDevices().isEmpty ? "No paired devices found" : "All devices hidden"
+            let noDevicesItem = NSMenuItem(title: emptyTitle, action: nil, keyEquivalent: "")
             noDevicesItem.isEnabled = false
             menu.addItem(noDevicesItem)
         } else {
@@ -102,6 +103,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 autoConnectItem.state = autoConnectDisabled ? .on : .off
                 deviceSubmenu.addItem(autoConnectItem)
 
+                deviceSubmenu.addItem(NSMenuItem.separator())
+                let hideItem = NSMenuItem(title: "Hide from List", action: #selector(hideDevice(_:)), keyEquivalent: "")
+                hideItem.target = self
+                hideItem.representedObject = device
+                deviceSubmenu.addItem(hideItem)
+
                 // Set the submenu
                 deviceItem.submenu = deviceSubmenu
 
@@ -121,6 +128,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(refreshDevices), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
+
+        let hiddenDevices = bluetoothManager.getHiddenDevices()
+        if !hiddenDevices.isEmpty {
+            let hiddenItem = NSMenuItem(title: "Hidden Devices", action: nil, keyEquivalent: "")
+            let hiddenSubmenu = NSMenu()
+            for device in hiddenDevices {
+                // Hidden devices are still blocked, so flag it to explain any "Blocked" notifications.
+                let suffix = bluetoothManager.isAutoConnectDisabled(for: device) ? " (auto-connect off)" : ""
+                let showItem = NSMenuItem(title: "Show \(device.name)\(suffix)", action: #selector(showDevice(_:)), keyEquivalent: "")
+                showItem.target = self
+                showItem.representedObject = device
+                hiddenSubmenu.addItem(showItem)
+            }
+            hiddenItem.submenu = hiddenSubmenu
+            menu.addItem(hiddenItem)
+        }
 
         let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         loginItem.target = self
@@ -159,6 +182,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func refreshDevices() {
         bluetoothManager.refreshDevices()
+    }
+
+    @objc func hideDevice(_ sender: NSMenuItem) {
+        guard let device = sender.representedObject as? BluetoothDevice else { return }
+        bluetoothManager.setHidden(true, for: device)
+    }
+
+    @objc func showDevice(_ sender: NSMenuItem) {
+        guard let device = sender.representedObject as? BluetoothDevice else { return }
+        bluetoothManager.setHidden(false, for: device)
     }
 
     @objc func toggleLaunchAtLogin(_ sender: NSMenuItem) {
