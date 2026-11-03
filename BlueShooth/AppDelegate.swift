@@ -7,6 +7,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var menu: NSMenu!
     var bluetoothManager: BluetoothManager!
 
+    private static let instance = AppDelegate()
+
+    // The default @main entry only wires up the delegate via a MainMenu nib, which this app doesn't have.
+    @MainActor static func main() {
+        let app = NSApplication.shared
+        app.delegate = instance
+        app.run()
+    }
+
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
