@@ -10,6 +10,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private static let instance = AppDelegate()
 
+    private static let connectedImage = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Connected")?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [.systemGreen])))
+    private static let disconnectedImage = NSImage(systemSymbolName: "circle", accessibilityDescription: "Disconnected")?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular))
+
     // The default @main entry only wires up the delegate via a MainMenu nib, which this app doesn't have.
     @MainActor static func main() {
         let app = NSApplication.shared
@@ -37,12 +43,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func setupMenu() {
         menu.removeAllItems()
 
-        // Title
-        let titleItem = NSMenuItem(title: "BlueShooth - Smart Bluetooth Manager", action: nil, keyEquivalent: "")
-        titleItem.isEnabled = false
-        menu.addItem(titleItem)
-        menu.addItem(NSMenuItem.separator())
-
         // Paired devices section
         let pairedDevices = bluetoothManager.getPairedDevices()
 
@@ -56,17 +56,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Create submenu for each device
                 let deviceItem = NSMenuItem(title: device.name, action: nil, keyEquivalent: "")
                 let deviceSubmenu = NSMenu()
-
-                // Connection status
+                deviceSubmenu.showsStateColumn = false
                 let isConnected = bluetoothManager.isConnected(device)
-                let statusItem = NSMenuItem(
-                    title: isConnected ? "🟢 Connected" : "⚪️ Disconnected",
-                    action: nil,
-                    keyEquivalent: ""
-                )
-                statusItem.isEnabled = false
-                deviceSubmenu.addItem(statusItem)
-                deviceSubmenu.addItem(NSMenuItem.separator())
 
                 // Connect/Disconnect option
                 if isConnected {
@@ -94,13 +85,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Auto-connect toggle
                 let autoConnectDisabled = bluetoothManager.isAutoConnectDisabled(for: device)
                 let autoConnectItem = NSMenuItem(
-                    title: autoConnectDisabled ? "🚫 Auto-connect: Disabled" : "✓ Auto-connect: Enabled",
+                    title: autoConnectDisabled ? "🚫 Auto-connect: Disabled" : "✅ Auto-connect: Enabled",
                     action: #selector(toggleDeviceAutoConnect(_:)),
                     keyEquivalent: ""
                 )
                 autoConnectItem.target = self
                 autoConnectItem.representedObject = device
-                autoConnectItem.state = autoConnectDisabled ? .on : .off
                 deviceSubmenu.addItem(autoConnectItem)
 
                 deviceSubmenu.addItem(NSMenuItem.separator())
@@ -112,12 +102,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Set the submenu
                 deviceItem.submenu = deviceSubmenu
 
-                // Update main item title based on connection status
-                if isConnected {
-                    deviceItem.title = "🟢 \(device.name)"
-                } else {
-                    deviceItem.title = "⚪️ \(device.name)"
-                }
+                // Connection status shown in the state column, in place of the checkmark
+                deviceItem.onStateImage = Self.connectedImage
+                deviceItem.offStateImage = Self.disconnectedImage
+                deviceItem.state = isConnected ? .on : .off
 
                 menu.addItem(deviceItem)
             }
@@ -133,6 +121,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !hiddenDevices.isEmpty {
             let hiddenItem = NSMenuItem(title: "Hidden Devices", action: nil, keyEquivalent: "")
             let hiddenSubmenu = NSMenu()
+            hiddenSubmenu.showsStateColumn = false
             for device in hiddenDevices {
                 // Hidden devices are still blocked, so flag it to explain any "Blocked" notifications.
                 let suffix = bluetoothManager.isAutoConnectDisabled(for: device) ? " (auto-connect off)" : ""
@@ -144,6 +133,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             hiddenItem.submenu = hiddenSubmenu
             menu.addItem(hiddenItem)
         }
+
+        let settingsItem = NSMenuItem(title: "Bluetooth Settings…", action: #selector(openBluetoothSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         loginItem.target = self
@@ -182,6 +175,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func refreshDevices() {
         bluetoothManager.refreshDevices()
+    }
+
+    @objc func openBluetoothSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc func hideDevice(_ sender: NSMenuItem) {
