@@ -1,6 +1,9 @@
 import Foundation
 import IOBluetooth
 import UserNotifications
+import os
+
+private let log = Logger(subsystem: "com.blueshooth.app", category: "bluetooth")
 
 struct BluetoothDevice: Hashable {
     let address: String
@@ -16,12 +19,17 @@ struct BluetoothDevice: Hashable {
     }
 }
 
-class BluetoothManager {
+class BluetoothManager: NSObject {
     private let userDefaultsKey = "DisabledAutoConnectDevices"
     private var disabledDevices: Set<String> = []
     private var pairedDevices: [BluetoothDevice] = []
+    private var connectNotification: IOBluetoothUserNotification?
+    private var pendingBlocks: Set<String> = []
+    private let hiddenDefaultsKey = "HiddenDevices"
+    private var hiddenDevices: Set<String> = []  // e.g. hidden system pairings that pairedDevices() still returns
 
-    init() {
+    override init() {
+        super.init()
         loadDisabledDevices()
         refreshDevices()
         setupBluetoothMonitoring()
@@ -45,7 +53,20 @@ class BluetoothManager {
     }
 
     func getPairedDevices() -> [BluetoothDevice] {
-        return pairedDevices
+        return pairedDevices.filter { !hiddenDevices.contains($0.address) }
+    }
+
+    func getHiddenDevices() -> [BluetoothDevice] {
+        return pairedDevices.filter { hiddenDevices.contains($0.address) }
+    }
+
+    func setHidden(_ hidden: Bool, for device: BluetoothDevice) {
+        if hidden {
+            hiddenDevices.insert(device.address)
+        } else {
+            hiddenDevices.remove(device.address)
+        }
+        UserDefaults.standard.set(Array(hiddenDevices), forKey: hiddenDefaultsKey)
     }
 
     func refreshDevices() {
@@ -77,7 +98,6 @@ class BluetoothManager {
             return true
         }
 
-        // Attempt to open connection
         let result = device.deviceRef.openConnection()
 
         if result == kIOReturnSuccess {
@@ -132,34 +152,42 @@ class BluetoothManager {
     }
 
     private func setupBluetoothMonitoring() {
-        // Monitor Bluetooth connection attempts
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name(rawValue: "IOBluetoothDeviceConnectedNotification"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            self?.handleDeviceConnected(notification)
-        }
+        connectNotification = IOBluetoothDevice.register(
+            forConnectNotifications: self,
+            selector: #selector(deviceConnected(_:device:))
+        )
     }
 
-    private func handleDeviceConnected(_ notification: Notification) {
-        guard let device = notification.object as? IOBluetoothDevice,
-              let address = device.addressString else {
+    @objc private func deviceConnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        guard let address = device.addressString else {
+            return
+        }
+        let incoming = device.isIncoming()
+        log.notice("connect: \(device.name ?? "?", privacy: .public) \(address, privacy: .public) incoming=\(incoming) disabled=\(self.disabledDevices.contains(address))")
+
+        // Auto-connects are started by the device; manual connects (menu or System Settings) are outgoing from the Mac.
+        guard incoming, disabledDevices.contains(address), !pendingBlocks.contains(address) else {
             return
         }
 
-        // If this device is in our disabled list, disconnect it immediately
-        if disabledDevices.contains(address) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                device.closeConnection()
-                self.sendNotification(title: "BlueShooth", body: "Blocked auto-connect for \(device.name ?? "device")")
-            }
+        pendingBlocks.insert(address)  // one connection can fire several connect notifications
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.pendingBlocks.remove(address)
+            guard self.disabledDevices.contains(address), device.isConnected() else { return }
+            let result = device.closeConnection()
+            log.notice("blocking: \(device.name ?? "?", privacy: .public) result=\(result)")
+            let name = device.name ?? "device"
+            let body = result == kIOReturnSuccess ? "Blocked auto-connect for \(name)" : "Couldn't block auto-connect for \(name)"
+            self.sendNotification(title: "BlueShooth", body: body)
         }
     }
 
     private func loadDisabledDevices() {
         if let saved = UserDefaults.standard.array(forKey: userDefaultsKey) as? [String] {
             disabledDevices = Set(saved)
+        }
+        if let hidden = UserDefaults.standard.array(forKey: hiddenDefaultsKey) as? [String] {
+            hiddenDevices = Set(hidden)
         }
     }
 
