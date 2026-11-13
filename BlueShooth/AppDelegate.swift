@@ -12,8 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let instance = AppDelegate()
 
     private static let connectedImage = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Connected")?
-        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [.systemGreen])))
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular))
     private static let disconnectedImage = NSImage(systemSymbolName: "circle", accessibilityDescription: "Disconnected")?
         .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular))
 
@@ -148,7 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(refreshDevices), keyEquivalent: "r")
+        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(refreshDevices), keyEquivalent: "")
         refreshItem.target = self
         menu.addItem(refreshItem)
 
@@ -169,7 +168,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(hiddenItem)
         }
 
-        let settingsItem = NSMenuItem(title: "Bluetooth Settings…", action: #selector(openBluetoothSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: "Bluetooth Settings…", action: #selector(openBluetoothSettings), keyEquivalent: "")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
@@ -188,7 +187,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit BlueShooth", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit BlueShooth", action: #selector(quitApp), keyEquivalent: "")  // no shortcuts: they'd reserve a column that pushes the battery levels away from the chevrons
         quitItem.target = self
         menu.addItem(quitItem)
 
