@@ -18,6 +18,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // The default @main entry only wires up the delegate via a MainMenu nib, which this app doesn't have.
     @MainActor static func main() {
+        if CommandLine.arguments.contains(BatteryMonitor.classicHelperArgument) {
+            BatteryMonitor.printClassicLevels()  // helper mode: see BatteryMonitor.refreshClassic()
+            exit(0)
+        }
         let app = NSApplication.shared
         app.delegate = instance
         app.run()

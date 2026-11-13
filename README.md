@@ -97,9 +97,9 @@ With no development team set, Xcode signs the app ad-hoc ("Sign to Run Locally")
 There's no single public API for Bluetooth accessory battery levels, so BlueShooth uses two sources:
 
 - **Bluetooth Low Energy devices** (e.g. most modern mice): the standard Battery Service, read via CoreBluetooth. BlueShooth briefly opens its own connection to read the level, then closes it; the system's connection is unaffected.
-- **Classic audio devices** (e.g. headphones): an undocumented `IOBluetoothDevice` property (`batteryPercentSingle`). BlueShooth checks it exists before reading, so if a future macOS removes it, these devices simply show no level.
+- **Classic audio devices** (e.g. headphones): an undocumented `IOBluetoothDevice` property (`batteryPercentSingle`). BlueShooth checks it exists before reading, so if a future macOS removes it, these devices simply show no level. In a long-running process this value drops to 0 whenever the level changes, so BlueShooth reads it in a short-lived copy of itself (`BlueShooth --print-classic-battery`), which takes about 0.1 seconds.
 
-Low Energy levels are read at launch, every 2 minutes, and when the menu opens (at most once a minute per device), and the menu shows the latest reading. Classic levels are read fresh each time the menu opens. Classic keyboards and other devices that report battery only to macOS itself show no level, matching the native Bluetooth menu.
+Levels are read in the background at launch, every 2 minutes, and when the menu opens (Low Energy devices at most once a minute each), and the menu shows the latest reading. Classic keyboards and other devices that report battery only to macOS itself show no level, matching the native Bluetooth menu.
 
 ## Permissions
 

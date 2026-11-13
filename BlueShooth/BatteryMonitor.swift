@@ -15,6 +15,8 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     private var leLevels: [String: Int] = [:]  // keyed by name: CoreBluetooth doesn't expose device addresses
     private var reading: [UUID: (peripheral: CBPeripheral, token: UUID)] = [:]
     private var lastRead: [UUID: Date] = [:]
+    private var classicLevels: [String: Int] = [:]  // keyed by address
+    private var classicHelperRunning = false
     private var timer: Timer?
 
     override init() {
@@ -27,13 +29,11 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
 
     /// Latest known level, or nil if the device doesn't report one. Returns immediately; reads happen in `refresh()`.
     func level(for device: BluetoothDevice) -> Int? {
-        if let level = leLevels[device.name] {
-            return level
-        }
-        return classicLevel(for: device.deviceRef)
+        leLevels[device.name] ?? classicLevels[device.address]
     }
 
     func refresh() {
+        refreshClassic()
         guard central.state == .poweredOn else { return }
         let connected = central.retrieveConnectedPeripherals(withServices: [Self.batteryService])
         let connectedNames = Set(connected.compactMap(\.name))
@@ -64,14 +64,62 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
         }
     }
 
-    // Undocumented, so check it exists: if Apple removes it, classic devices just show no level.
-    private func classicLevel(for device: IOBluetoothDevice) -> Int? {
-        guard device.responds(to: Selector(Self.classicBatteryKey)),
-              let level = (device.value(forKey: Self.classicBatteryKey) as? NSNumber)?.intValue,
-              level > 0 else {
-            return nil
+    // MARK: - Classic devices
+
+    static let classicHelperArgument = "--print-classic-battery"
+
+    /// Runs in a short-lived copy of the app: prints "address<TAB>level" for each connected classic device.
+    /// A long-running process's IOBluetoothDevice drops this value to 0 when the level changes, so it can't be read in-process.
+    static func printClassicLevels() {
+        for device in (IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice]) ?? [] where device.isConnected() {
+            // Undocumented, so check it exists: if Apple removes it, classic devices just show no level.
+            guard device.responds(to: Selector(classicBatteryKey)),
+                  let address = device.addressString,
+                  let level = (device.value(forKey: classicBatteryKey) as? NSNumber)?.intValue,
+                  level > 0, level <= 100 else { continue }
+            print("\(address)\t\(level)")
         }
-        return level
+    }
+
+    private func refreshClassic() {
+        guard !classicHelperRunning, let executable = Bundle.main.executableURL else { return }
+        classicHelperRunning = true
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = [Self.classicHelperArgument]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var levels: [String: Int] = [:]
+            var succeeded = false
+            do {
+                try process.run()
+                DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+                    if process.isRunning { process.terminate() }  // a hung helper would otherwise block all future reads
+                }
+                let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                process.waitUntilExit()
+                succeeded = process.terminationStatus == 0
+                for line in output.split(separator: "\n") {
+                    let parts = line.split(separator: "\t")
+                    if parts.count == 2, let level = Int(parts[1]) {
+                        levels[String(parts[0])] = level
+                    }
+                }
+            } catch {
+                log.error("classic battery helper failed: \(error.localizedDescription, privacy: .public)")
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.classicHelperRunning = false
+                guard succeeded else { return }  // keep the last good readings
+                if levels != self.classicLevels {
+                    log.notice("classic battery: \(levels.description, privacy: .public)")
+                }
+                self.classicLevels = levels
+            }
+        }
     }
 
     /// With a token, only finishes that specific read, so a stale timeout can't cancel a newer one.
