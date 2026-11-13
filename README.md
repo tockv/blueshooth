@@ -18,9 +18,10 @@ BlueShooth runs in your menu bar and lets you choose which paired devices should
 - 🎯 **Selective Auto-Connect Control**: Choose which devices can auto-connect
 - 🔌 **Quick Connect/Disconnect**: Connect or disconnect devices directly from the menu bar
 - 🟢 **Real-Time Status**: See which devices are currently connected
+- 🔋 **Battery Levels**: See battery percentages for connected devices that report them
 - 🚫 **Automatic Blocking**: Disconnects blocked devices when they try to auto-connect, while letting your manual connections through
 - 🙈 **Hide Devices**: Remove clutter from the list, such as hidden system pairings
-- ⚙️ **Bluetooth Settings Shortcut**: Open the native Bluetooth settings, so BlueShooth can replace the system Bluetooth menu bar item
+- ⚙️ **Bluetooth Settings Link**: Open the native Bluetooth settings, so BlueShooth can replace the system Bluetooth menu bar item
 - 🚀 **Launch at Login**: Start automatically when you log in
 - 🔔 **Notifications**: Get notified about connection events
 - 💾 **Persistent Settings**: Your preferences are saved between sessions
@@ -60,8 +61,10 @@ With no development team set, Xcode signs the app ad-hoc ("Sign to Run Locally")
 ## Usage
 
 1. **View Devices**: Click the menu bar icon (a Bluetooth antenna) to see your paired devices. The indicator beside each device shows its status:
-   - Green dot = connected
+   - Filled circle = connected
    - Outline circle = disconnected
+
+   Connected devices that report a battery level show it in a column on the right.
 
 2. **Connect/Disconnect**: Open a device's submenu and choose **Connect** or **Disconnect**. Connecting can take several seconds, during which the menu is unresponsive.
 
@@ -74,8 +77,8 @@ With no development team set, Xcode signs the app ad-hoc ("Sign to Run Locally")
 4. **Hide Devices**: Choose **Hide from List** in a device's submenu. Hidden devices appear under **Hidden Devices**, where you can show them again. Hiding only affects the list; a hidden device's auto-connect setting still applies.
 
 5. **Other options**:
-   - **Refresh Devices** (⌘R) re-reads the paired device list (this also happens each time the menu opens)
-   - **Bluetooth Settings…** (⌘,) opens System Settings → Bluetooth
+   - **Refresh Devices** re-reads the paired device list (this also happens each time the menu opens)
+   - **Bluetooth Settings…** opens System Settings → Bluetooth
    - **Launch at Login** toggles starting at login; if macOS needs you to approve it, the item says so and opens Login Items settings
 
 ## How It Works
@@ -85,8 +88,18 @@ With no development team set, Xcode signs the app ad-hoc ("Sign to Run Locally")
 3. When a device with auto-connect disabled connects, checks who started the connection:
    - **Started by the device** (`isIncoming`) → treated as an auto-connect and disconnected
    - **Started by the Mac** (the BlueShooth menu or System Settings) → treated as manual and left alone
-4. Stores auto-connect and hidden-device preferences locally using UserDefaults
-5. Registers as a login item via `SMAppService`
+4. Reads battery levels for connected devices (see [Battery Levels](#battery-levels))
+5. Stores auto-connect and hidden-device preferences locally using UserDefaults
+6. Registers as a login item via `SMAppService`
+
+### Battery Levels
+
+There's no single public API for Bluetooth accessory battery levels, so BlueShooth uses two sources:
+
+- **Bluetooth Low Energy devices** (e.g. most modern mice): the standard Battery Service, read via CoreBluetooth. BlueShooth briefly opens its own connection to read the level, then closes it; the system's connection is unaffected.
+- **Classic audio devices** (e.g. headphones): an undocumented `IOBluetoothDevice` property (`batteryPercentSingle`). BlueShooth checks it exists before reading, so if a future macOS removes it, these devices simply show no level.
+
+Low Energy levels are read at launch, every 2 minutes, and when the menu opens (at most once a minute per device), and the menu shows the latest reading. Classic levels are read fresh each time the menu opens. Classic keyboards and other devices that report battery only to macOS itself show no level, matching the native Bluetooth menu.
 
 ## Permissions
 
@@ -100,10 +113,11 @@ BlueShooth requires Bluetooth access to list paired devices, monitor connection 
 - Devices must remain paired (unpaired devices can't be managed)
 - Some Bluetooth devices may not support programmatic connection/disconnection
 - `IOBluetoothDevice.pairedDevices()` can include pairings that System Settings hides; use **Hide from List** for these
+- CoreBluetooth doesn't expose device addresses, so Low Energy battery levels are matched to devices by name; devices with identical names may share a reading
 
 ## Troubleshooting
 
-Connect and block events are logged under the `com.blueshooth.app` subsystem. Stream them while reproducing a problem:
+Connect, block, and battery events are logged under the `com.blueshooth.app` subsystem. Stream them while reproducing a problem:
 
 ```bash
 /usr/bin/log stream --style compact --predicate 'subsystem == "com.blueshooth.app"'
@@ -120,6 +134,7 @@ BlueShooth/
 ├── BlueShooth/
 │   ├── AppDelegate.swift           # App entry point and menu bar interface
 │   ├── BluetoothManager.swift      # Bluetooth device management and blocking
+│   ├── BatteryMonitor.swift        # Battery level reading
 │   ├── Info.plist                  # App configuration
 │   └── BlueShooth.entitlements     # Required permissions
 ├── BlueShooth.xcodeproj/           # Xcode project
@@ -132,6 +147,7 @@ The app has no storyboard or nib, so `AppDelegate` provides its own `main()` to 
 
 - **Swift 5**
 - **IOBluetooth**: device listing, connection control, and connect notifications
+- **CoreBluetooth**: battery levels for Low Energy devices
 - **AppKit**: `NSStatusBar` menu bar integration
 - **ServiceManagement**: Launch at Login
 - **UserNotifications**: connection event notifications
@@ -147,12 +163,11 @@ The app has no storyboard or nib, so `AppDelegate` provides its own `main()` to 
 - [x] Quick connect/disconnect from menu bar
 - [x] Launch at login option
 - [x] Hide devices from the list
+- [x] Battery level indicators for devices
 - [ ] Connect without blocking the menu
 - [ ] Add device grouping/favorites
 - [ ] Customize notification sounds
 - [ ] Schedule-based auto-connect rules
-- [ ] Battery level indicators for devices
-- [ ] Keyboard shortcuts
 - [ ] Connection history tracking
 
 ## License
