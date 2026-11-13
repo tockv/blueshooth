@@ -7,12 +7,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItem: NSStatusItem!
     var menu: NSMenu!
     var bluetoothManager: BluetoothManager!
+    var batteryMonitor: BatteryMonitor!
 
     private static let instance = AppDelegate()
 
     private static let connectedImage = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Connected")?
-        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [.systemGreen])))
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular))
     private static let disconnectedImage = NSImage(systemSymbolName: "circle", accessibilityDescription: "Disconnected")?
         .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular))
 
@@ -28,6 +28,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right", accessibilityDescription: "BlueShooth")
 
         bluetoothManager = BluetoothManager()
+        batteryMonitor = BatteryMonitor()
+        bluetoothManager.willDisconnect = { [weak batteryMonitor] in
+            batteryMonitor?.cancelAllReads()
+        }
 
         menu = NSMenu()
         menu.delegate = self
@@ -37,11 +41,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Rebuild on every open so connection status is always current.
     func menuNeedsUpdate(_ menu: NSMenu) {
         bluetoothManager.refreshDevices()
+        batteryMonitor.refresh()  // async; this open shows the last reading
         setupMenu()
+    }
+
+    /// Right-aligns battery levels in one column, clear of every device name (not just ones with a reading)
+    /// so the column doesn't overlap long names or shift as devices connect.
+    private func applyBatteryColumn(_ rows: [(item: NSMenuItem, name: String, battery: Int)], deviceItems: [NSMenuItem]) {
+        guard !rows.isEmpty else { return }
+        let font = NSFont.menuFont(ofSize: 0)
+        func width(_ text: String) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
+
+        let deviceIDs = Set(deviceItems.map { ObjectIdentifier($0) })
+        let widestOther = menu.items.filter { !deviceIDs.contains(ObjectIdentifier($0)) }.map { width($0.title) }.max() ?? 0
+        let widestBatteryRow = (deviceItems.map { width($0.title) }.max() ?? 0) + 16 + width("100%")
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .right, location: ceil(max(widestOther, widestBatteryRow)))]
+
+        for row in rows {
+            let title = NSMutableAttributedString(string: row.name, attributes: [.font: font, .paragraphStyle: style])
+            title.append(NSAttributedString(
+                string: "\t\(row.battery)%",
+                attributes: [.font: font, .paragraphStyle: style, .foregroundColor: NSColor.secondaryLabelColor]
+            ))
+            row.item.attributedTitle = title
+        }
     }
 
     func setupMenu() {
         menu.removeAllItems()
+        var batteryRows: [(item: NSMenuItem, name: String, battery: Int)] = []
+        var deviceItems: [NSMenuItem] = []
 
         // Paired devices section
         let pairedDevices = bluetoothManager.getPairedDevices()
@@ -106,14 +136,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 deviceItem.onStateImage = Self.connectedImage
                 deviceItem.offStateImage = Self.disconnectedImage
                 deviceItem.state = isConnected ? .on : .off
+                if isConnected, let battery = batteryMonitor.level(for: device) {
+                    batteryRows.append((deviceItem, device.name, battery))
+                }
 
                 menu.addItem(deviceItem)
+                deviceItems.append(deviceItem)
             }
         }
 
         menu.addItem(NSMenuItem.separator())
 
-        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(refreshDevices), keyEquivalent: "r")
+        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(refreshDevices), keyEquivalent: "")
         refreshItem.target = self
         menu.addItem(refreshItem)
 
@@ -134,7 +168,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(hiddenItem)
         }
 
-        let settingsItem = NSMenuItem(title: "Bluetooth Settings…", action: #selector(openBluetoothSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: "Bluetooth Settings…", action: #selector(openBluetoothSettings), keyEquivalent: "")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
@@ -153,9 +187,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit BlueShooth", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit BlueShooth", action: #selector(quitApp), keyEquivalent: "")  // no shortcuts: they'd reserve a column that pushes the battery levels away from the chevrons
         quitItem.target = self
         menu.addItem(quitItem)
+
+        applyBatteryColumn(batteryRows, deviceItems: deviceItems)  // after all items exist, so the column can clear the widest title
     }
 
     @objc func connectDevice(_ sender: NSMenuItem) {

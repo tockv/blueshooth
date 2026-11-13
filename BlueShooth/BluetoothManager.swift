@@ -27,6 +27,7 @@ class BluetoothManager: NSObject {
     private var pendingBlocks: Set<String> = []
     private let hiddenDefaultsKey = "HiddenDevices"
     private var hiddenDevices: Set<String> = []  // e.g. hidden system pairings that pairedDevices() still returns
+    var willDisconnect: (() -> Void)?  // called before every closeConnection
 
     override init() {
         super.init()
@@ -115,7 +116,7 @@ class BluetoothManager: NSObject {
             return true
         }
 
-        // Close the connection
+        willDisconnect?()
         let result = device.deviceRef.closeConnection()
 
         if result == kIOReturnSuccess {
@@ -142,6 +143,7 @@ class BluetoothManager: NSObject {
     private func disableAutoConnect(for device: BluetoothDevice) {
         // Disconnect if currently connected
         if device.deviceRef.isConnected() {
+            willDisconnect?()
             device.deviceRef.closeConnection()
         }
     }
@@ -174,6 +176,7 @@ class BluetoothManager: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.pendingBlocks.remove(address)
             guard self.disabledDevices.contains(address), device.isConnected() else { return }
+            self.willDisconnect?()
             let result = device.closeConnection()
             log.notice("blocking: \(device.name ?? "?", privacy: .public) result=\(result)")
             let name = device.name ?? "device"
